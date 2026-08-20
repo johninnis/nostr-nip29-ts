@@ -10,6 +10,12 @@ metadata event describing each group (name, picture, about, visibility, access).
 those events into `Group` value objects. It performs **no I/O** — querying relays and rendering live in
 the consumer.
 
+## Install
+
+```bash
+deno add jsr:@innis/nostr-nip29
+```
+
 ## Why a separate library?
 
 NIP-29 is small, but its implementations are not consistent — even on the basics. Surveying six
