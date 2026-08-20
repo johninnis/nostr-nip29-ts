@@ -4,6 +4,10 @@
   "publish": {
     "exclude": ["tests/", "deno.lock", ".github/"]
   },
+  "minimumDependencyAge": {
+    "age": "PT24H",
+    "exclude": ["jsr:@innis/*"]
+  },
   "license": "MIT",
   "description": "Pure domain helpers for NIP-29 relay-based groups: parse kind 39000 group-metadata events into Group value objects, build kind 9 group chat messages, and copy a group's `h` tag onto outgoing events. No I/O — querying and rendering live in the consumer.",
   "exports": "./mod.ts",
