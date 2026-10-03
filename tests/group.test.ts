@@ -1,6 +1,5 @@
 import { assertEquals } from "@std/assert"
-import { buildEventFixture } from "@innis/nostr-core/testing"
-import { parseRelayUrl } from "@innis/nostr-core"
+import { buildEventFixture, relayUrlFixture } from "@innis/nostr-core/testing"
 import {
   groupChatFilter,
   groupMetadataFilter,
@@ -9,7 +8,7 @@ import {
   parseGroupMetadata,
 } from "../mod.ts"
 
-const relay = parseRelayUrl("wss://groups.example.com")
+const relay = relayUrlFixture("wss://groups.example.com")
 
 Deno.test("groupMetadataFilter matches every group when no id is given", () => {
   assertEquals(groupMetadataFilter(), { kinds: [KIND_GROUP_METADATA] })
@@ -76,11 +75,13 @@ Deno.test("parseGroupMetadata leaves isRestricted and isHidden false without the
   assertEquals(group?.isHidden, false)
 })
 
-Deno.test("parseGroupMetadata honours explicit public and open markers", () => {
-  const event = buildEventFixture({ kind: KIND_GROUP_METADATA, tags: [["d", "g1"], ["public"], ["open"]] })
+Deno.test("parseGroupMetadata lets private and closed decide, whatever public or open tags sit beside them", () => {
+  const event = buildEventFixture({
+    kind: KIND_GROUP_METADATA,
+    tags: [["d", "g1"], ["public"], ["private"], ["open"], ["closed"]],
+  })
   const group = parseGroupMetadata(event, relay)
-  assertEquals(group?.isPublic, true)
-  assertEquals(group?.isOpen, true)
+  assertEquals([group?.isPublic, group?.isOpen], [false, false])
 })
 
 Deno.test("parseGroupMetadata falls back to the id when no name tag is present", () => {
@@ -102,6 +103,28 @@ Deno.test("parseGroupMetadata trims surrounding whitespace from text fields", ()
 Deno.test("parseGroupMetadata returns null without a d tag", () => {
   const event = buildEventFixture({ kind: KIND_GROUP_METADATA, tags: [["name", "Orphan"]] })
   assertEquals(parseGroupMetadata(event, relay), null)
+})
+
+Deno.test("parseGroupMetadata reads an empty d tag like an absent one: no group id, so no group", () => {
+  const event = buildEventFixture({ kind: KIND_GROUP_METADATA, tags: [["d", ""], ["name", "Orphan"]] })
+  assertEquals(parseGroupMetadata(event, relay), null)
+})
+
+Deno.test("parseGroupMetadata returns null when d tags disagree, since the group has no one id", () => {
+  const event = buildEventFixture({ kind: KIND_GROUP_METADATA, tags: [["d", "g1"], ["d", "g2"]] })
+  assertEquals(parseGroupMetadata(event, relay), null)
+})
+
+Deno.test("parseGroupMetadata reads name, about and picture tags that disagree as absent, whatever their order", () => {
+  const event = buildEventFixture({
+    kind: KIND_GROUP_METADATA,
+    tags: [["d", "g1"], ["name", "A"], ["about", "x"], ["picture", "p1"], ["name", "B"], ["about", "y"], [
+      "picture",
+      "p2",
+    ]],
+  })
+  const group = parseGroupMetadata(event, relay)
+  assertEquals([group?.name, group?.about, group?.picture], ["g1", null, null])
 })
 
 Deno.test("parseGroupMetadata returns null for the wrong kind", () => {

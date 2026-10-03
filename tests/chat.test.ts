@@ -1,10 +1,9 @@
 import { assertEquals } from "@std/assert"
-import { buildEventFixture } from "@innis/nostr-core/testing"
-import { parseEventId, parsePublicKey, parseRelayUrl } from "@innis/nostr-core"
+import { buildEventFixture, eventIdFixture, publicKeyFixture, relayUrlFixture } from "@innis/nostr-core/testing"
 import type { UnsignedEvent } from "@innis/nostr-core"
 import { buildGroupChatMessage, groupRelayHintOf, groupTagOf, KIND_GROUP_CHAT, withGroupTag } from "../mod.ts"
 
-const relay = parseRelayUrl("wss://groups.example.com")
+const relay = relayUrlFixture("wss://groups.example.com")
 
 Deno.test("groupTagOf returns the h tag with its relay hint", () => {
   const event = buildEventFixture({ kind: KIND_GROUP_CHAT, tags: [["h", "g1", "wss://relay.example.com"]] })
@@ -58,13 +57,14 @@ Deno.test("withGroupTag replaces a stale hint with the resolved relay", () => {
   assertEquals(withGroupTag(reaction, target, relay).tags, [["e", "a".repeat(64)], ["h", "g1", relay]])
 })
 
-Deno.test("withGroupTag copies the tag verbatim when no relay resolves", () => {
-  const target = buildEventFixture({ kind: KIND_GROUP_CHAT, tags: [["h", "g1", "wss://relay.example.com"]] })
-  assertEquals(withGroupTag(reaction, target, null).tags, [["e", "a".repeat(64)], [
-    "h",
-    "g1",
-    "wss://relay.example.com",
-  ]])
+Deno.test("withGroupTag keeps the target's own hint when no relay resolves", () => {
+  const target = buildEventFixture({ kind: KIND_GROUP_CHAT, tags: [["h", "g1", "wss://groups.example.com"]] })
+  assertEquals(withGroupTag(reaction, target, null).tags, [["e", "a".repeat(64)], ["h", "g1", relay]])
+})
+
+Deno.test("withGroupTag drops a target hint that is not a relay URL when no relay resolves", () => {
+  const target = buildEventFixture({ kind: KIND_GROUP_CHAT, tags: [["h", "g1", "not a relay", "extra"]] })
+  assertEquals(withGroupTag(reaction, target, null).tags, [["e", "a".repeat(64)], ["h", "g1"]])
 })
 
 Deno.test("withGroupTag leaves the event untouched when the target is not a group message", () => {
@@ -89,8 +89,8 @@ Deno.test("buildGroupChatMessage omits the hint when no relay is known", () => {
 })
 
 Deno.test("buildGroupChatMessage adds a q tag quoting the replied-to message", () => {
-  const parentId = parseEventId("b".repeat(64))
-  const parentPubkey = parsePublicKey("c".repeat(64))
+  const parentId = eventIdFixture("b".repeat(64))
+  const parentPubkey = publicKeyFixture("c".repeat(64))
   const event = buildGroupChatMessage({
     groupId: "g1",
     content: "re: hi",
@@ -98,4 +98,19 @@ Deno.test("buildGroupChatMessage adds a q tag quoting the replied-to message", (
     replyTo: { id: parentId, pubkey: parentPubkey },
   })
   assertEquals(event.tags, [["h", "g1", relay], ["q", parentId, relay, parentPubkey]])
+})
+
+Deno.test("buildGroupChatMessage keeps the quoted author when no relay is known, leaving the relay empty", () => {
+  const parentId = eventIdFixture("b".repeat(64))
+  const parentPubkey = publicKeyFixture("c".repeat(64))
+  const event = buildGroupChatMessage({
+    groupId: "g1",
+    content: "re: hi",
+    replyTo: { id: parentId, pubkey: parentPubkey },
+  })
+  assertEquals(event.tags, [["h", "g1"], ["q", parentId, "", parentPubkey]])
+})
+
+Deno.test("buildGroupChatMessage writes the pinned created_at", () => {
+  assertEquals(buildGroupChatMessage({ groupId: "g1", content: "hi", createdAt: 1700000000 }).created_at, 1700000000)
 })

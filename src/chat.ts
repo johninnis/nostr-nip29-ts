@@ -1,74 +1,68 @@
-import type { EventId, PublicKey, RelayUrl, RenderableEvent, Tag, UnsignedEvent } from "@innis/nostr-core"
-import { normaliseRelayUrl, now } from "@innis/nostr-core"
+import type { EventId, PublicKey, RelayUrl, Rumour, Tag, UnsignedEvent } from "@innis/nostr-core"
+import { now, parseRelayUrl } from "@innis/nostr-core"
 import { KIND_GROUP_CHAT } from "./group.ts"
 
-/**
- * The event's NIP-29 group `h` tag — `["h", <group-id>]` — or `null` if it carries none. The tag may
- * also carry a relay-hint third element (`["h", <group-id>, <relay-hint>]`); NIP-29 documents only the
- * group id, but that hint is a de-facto convention emitted by some clients (chachi, Hubstr) and
- * omitted by others (flotilla, grimoire).
- */
-export const groupTagOf = (event: RenderableEvent): Tag | null =>
-  event.tags.find((tag) => tag[0] === "h" && !!tag[1]) ?? null
+const groupTag = (groupId: string, relay: RelayUrl | null): Tag =>
+  relay === null ? ["h", groupId] : ["h", groupId, relay]
 
 /**
- * The relay hint carried on the event's group `h` tag, normalised — `null` when absent or invalid.
- * The hint is a de-facto convention (emitted by chachi, Hubstr) rather than written NIP-29, so events
- * from clients that omit it (flotilla, grimoire) will have none.
+ * The event's NIP-29 group `h` tag, `["h", <group-id>]` or `["h", <group-id>, <relay-hint>]`, or `null` when it carries
+ * none with a non-empty group id. The relay hint is optional on reading (shared ADR-0101).
  */
-export const groupRelayHintOf = (event: RenderableEvent): RelayUrl | null => {
-  const hint = groupTagOf(event)?.[2]
-  return hint === undefined ? null : normaliseRelayUrl(hint)
-}
+export const groupTagOf = (event: Rumour): Tag | null => event.tags.find((tag) => tag[0] === "h" && !!tag[1]) ?? null
 
 /**
- * Copy `target`'s NIP-29 group `h` tag onto an outgoing event (reaction, repost, zap request) so
- * group relays accept it and it routes back to the group. `groupRelay` — the group's resolved
- * hosting relay — is written as the tag's relay hint (a de-facto convention, not written NIP-29, but
- * also emitted by chachi); when `null` the tag is copied verbatim. No-op when `target` is `null` or
- * carries no group tag.
+ * The relay hint on the event's group `h` tag as a canonical relay URL, or `null` when the event has no group tag, the
+ * tag has no hint, or the hint is not a relay URL (shared ADR-0101).
+ */
+export const groupRelayHintOf = (event: Rumour): RelayUrl | null => parseRelayUrl(groupTagOf(event)?.[2])
+
+/**
+ * Add `target`'s NIP-29 group `h` tag to an outgoing event (reaction, repost, zap request) so the group's relay accepts
+ * it and it routes back to the group. The tag's relay hint is `groupRelay`, the group's resolved hosting relay, or
+ * otherwise the target's own hint when it is a relay URL (shared ADR-0101). The event is returned unchanged when
+ * `target` is `null` or carries no group tag.
  */
 export const withGroupTag = (
   event: UnsignedEvent,
-  target: RenderableEvent | null,
+  target: Rumour | null,
   groupRelay: RelayUrl | null,
 ): UnsignedEvent => {
-  const groupTag = target ? groupTagOf(target) : null
-  const groupId = groupTag?.[1]
-  if (!groupTag || !groupId) return event
-  const tag: Tag = groupRelay ? ["h", groupId, groupRelay] : groupTag
-  return { ...event, tags: [...event.tags, tag] }
+  const groupId = target === null ? undefined : groupTagOf(target)?.[1]
+  if (target === null || groupId === undefined) return event
+  return { ...event, tags: [...event.tags, groupTag(groupId, groupRelay ?? groupRelayHintOf(target))] }
 }
 
-/** The message a group chat reply quotes. */
+/** The kind 9 message a group chat reply quotes. */
 export interface GroupChatReply {
   readonly id: EventId
   readonly pubkey: PublicKey
 }
 
-/** The fields needed to build a NIP-29 kind 9 group chat message. */
+/** The fields needed to build a kind 9 group chat message. */
 export interface GroupChatInput {
   readonly groupId: string
   readonly content: string
-  /**
-   * The group's relay, recorded as the `h` (and reply `q`) tag relay hint so others can resolve it.
-   * The `h` relay hint is a de-facto convention (chachi, Hubstr), not written into NIP-29.
-   */
+  /** The group's hosting relay, written as the relay of the `h` tag (shared ADR-0101) and of a reply's `q` tag. */
   readonly relayHint?: RelayUrl | null
   readonly replyTo?: GroupChatReply | null
+  /** Pins the `created_at`, which defaults to the system clock ({@link now}). */
+  readonly createdAt?: number
 }
 
 /**
- * Build an unsigned NIP-29 kind 9 chat message for a group. Carries the group `h` tag (with the relay
- * hint when known). NIP-29 defines no chat-reply structure, so a reply is expressed with a `q` quote
- * tag — the convention grimoire and wisp also use; other clients differ (nostrord uses a barer
- * `["q", id]`, flotilla quotes in content).
+ * Build an unsigned kind 9 group chat message carrying the group's `h` tag, with the relay hint when known. A reply
+ * quotes its parent with a NIP-C7 `q` tag in the NIP-18 shape `["q", <event-id>, <relay-url>, <pubkey>]`, the relay
+ * left empty when unknown.
  */
 export const buildGroupChatMessage = (input: GroupChatInput): UnsignedEvent => {
-  const hint = input.relayHint ?? null
-  const tags: Array<Tag> = [hint ? ["h", input.groupId, hint] : ["h", input.groupId]]
-  if (input.replyTo) {
-    tags.push(hint ? ["q", input.replyTo.id, hint, input.replyTo.pubkey] : ["q", input.replyTo.id])
+  const relay = input.relayHint ?? null
+  const reply = input.replyTo ?? null
+  const quote: ReadonlyArray<Tag> = reply === null ? [] : [["q", reply.id, relay ?? "", reply.pubkey]]
+  return {
+    kind: KIND_GROUP_CHAT,
+    created_at: input.createdAt ?? now(),
+    tags: [groupTag(input.groupId, relay), ...quote],
+    content: input.content,
   }
-  return { kind: KIND_GROUP_CHAT, created_at: now(), tags, content: input.content }
 }
