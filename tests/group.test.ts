@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert"
-import { buildEventFixture, relayUrlFixture } from "@innis/nostr-core/testing"
+import { buildEventFixture, publicKeyFixture, relayUrlFixture } from "@innis/nostr-core/testing"
 import {
   groupChatFilter,
   groupMetadataFilter,
@@ -130,4 +130,21 @@ Deno.test("parseGroupMetadata reads name, about and picture tags that disagree a
 Deno.test("parseGroupMetadata returns null for the wrong kind", () => {
   const event = buildEventFixture({ kind: 1, tags: [["d", "g1"]] })
   assertEquals(parseGroupMetadata(event, relay), null)
+})
+
+Deno.test("parseGroupMetadata accepts metadata signed by the relay's own key", () => {
+  const relayKey = publicKeyFixture("a".repeat(64))
+  const event = buildEventFixture({ kind: KIND_GROUP_METADATA, pubkey: relayKey, tags: [["d", "abcdef"]] })
+
+  assertEquals(parseGroupMetadata(event, relay, relayKey)?.id, "abcdef")
+})
+
+Deno.test("parseGroupMetadata refuses metadata signed by a key other than the relay's", () => {
+  const event = buildEventFixture({
+    kind: KIND_GROUP_METADATA,
+    pubkey: publicKeyFixture("b".repeat(64)),
+    tags: [["d", "abcdef"]],
+  })
+
+  assertEquals(parseGroupMetadata(event, relay, publicKeyFixture("a".repeat(64))), null)
 })

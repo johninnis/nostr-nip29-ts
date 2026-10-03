@@ -24,7 +24,7 @@ queryEvents(groupMetadataFilter(), { relays: [relay], exactRelays: true })
 const group: Group | null = parseGroupMetadata(event, relay)
 ```
 
-`parseGroupMetadata(event, relay)` returns `null` when the event is not a kind 39000 or its `d` tag (the required group id) is absent, empty or disagreeing. Read access and join policy default to public/open unless the relay tags the group `private` (only members can read) / `closed` (join requests ignored). `isRestricted` (only members can write) and `isHidden` (relays hide metadata from non-members) default `false` unless their tags are present. `isLiveAvSpace` reflects the spec `livekit` tag, marking a group that supports live audio/video chat via a LiveKit server (NIP-29 "Live AV spaces").
+`parseGroupMetadata(event, relay)` returns `null` when the event is not a kind 39000 or its `d` tag (the required group id) is absent, empty or disagreeing. NIP-29 has the relay sign group metadata with its NIP-11 `self` key: pass that key as a third argument, `parseGroupMetadata(event, relay, relayPubkey)`, and metadata signed by any other key is also `null`. NIP-11 makes `self` optional, so without it the signer is not checked. Read access and join policy default to public/open unless the relay tags the group `private` (only members can read) / `closed` (join requests ignored). `isRestricted` (only members can write) and `isHidden` (relays hide metadata from non-members) default `false` unless their tags are present. `isLiveAvSpace` reflects the spec `livekit` tag, marking a group that supports live audio/video chat via a LiveKit server (NIP-29 "Live AV spaces").
 
 ## Chat
 
